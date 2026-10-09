@@ -256,3 +256,34 @@ def test_dataset_split_is_by_image_and_deterministic():
     splits = [image_split(i) for i in range(4000)]
     assert 0.03 < splits.count("test") / 4000 < 0.12
     assert splits.count("train") > splits.count("val") > 0
+
+
+@pytest.mark.parametrize("env,expected", [
+    ({"TINKER_API_KEY": "tml-main"}, "tml-main"),
+    ({"SIMON_TINKER_API_KEY": "tml-alias"}, "tml-alias"),
+    ({"TINKER_API_KEY": "tml-main", "SIMON_TINKER_API_KEY": "tml-alias"}, "tml-main"),
+    ({}, None),
+])
+def test_tinker_scorer_reads_tinker_api_key_then_the_simon_alias(monkeypatch, env, expected):
+    """The documented TINKER_API_KEY reaches tinker.ServiceClient; SIMON_TINKER_API_KEY is only a fallback."""
+    from simon_sees import tinker_referee
+
+    for k in ("TINKER_API_KEY", "SIMON_TINKER_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    seen = {}
+
+    class FakeServiceClient:
+        def __init__(self, **kw):
+            seen["kw"] = kw
+
+        def create_sampling_client(self, **kw):
+            seen["sampling"] = kw
+            return FakeSampler()
+
+    monkeypatch.setitem(sys.modules, "tinker", SimpleNamespace(ServiceClient=FakeServiceClient))
+    tinker_referee.TinkerScorer(model_path="tinker://run/sampler_weights/final", tokenizer=FakeTok())
+    assert seen["kw"] == ({"api_key": expected} if expected else {})
+    assert seen["sampling"] == {"model_path": "tinker://run/sampler_weights/final"}
+    assert tinker_referee.tinker_api_key() == expected

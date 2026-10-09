@@ -161,6 +161,18 @@ def p_yes_from_topk(topk: Sequence[tuple[int, float]], yes_ids: set[int], no_ids
 # --------------------------------------------------------------------------- Tinker sampling
 
 
+def tinker_api_key() -> str | None:
+    """The Tinker key: TINKER_API_KEY (what the docs, `tinker_available()` and the scripts use), then the older
+    SIMON_TINKER_API_KEY alias. Never logged."""
+    return os.environ.get("TINKER_API_KEY") or os.environ.get("SIMON_TINKER_API_KEY") or None
+
+
+def service_client_kwargs() -> dict:
+    """Arguments for `tinker.ServiceClient`: the key when one is set, else nothing (the SDK's own lookup)."""
+    key = tinker_api_key()
+    return {"api_key": key} if key else {}
+
+
 class TinkerScorer:
     """Scores (image, prompt) pairs with a Tinker sampling client: one generated token, top-20 logprobs."""
 
@@ -174,8 +186,7 @@ class TinkerScorer:
         if client is None:
             import tinker
 
-            sc = tinker.ServiceClient(**({"api_key": os.environ["SIMON_TINKER_API_KEY"]}
-                                         if os.environ.get("SIMON_TINKER_API_KEY") else {}))
+            sc = tinker.ServiceClient(**service_client_kwargs())
             client = (sc.create_sampling_client(model_path=model_path) if model_path
                       else sc.create_sampling_client(base_model=base_model))
         self.client = client
