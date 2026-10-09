@@ -73,9 +73,14 @@ def test_player_who_left_is_unseen_and_the_others_stay_correct():
 
 
 def test_a_stranger_walking_in_is_not_given_a_players_identity():
-    idents = [Identity(0, [BASE[0]], box(0))]
-    ms = assign(idents, np.stack([BASE[3]]), [box(2)])  # different person, different place
-    assert ms[0].det is None
+    idents = [Identity(0, [BASE[0]], box(0)), Identity(1, [BASE[1]], box(1))]
+    ms = assign(idents, np.stack([near(0, seed=9), BASE[3]]), [box(0), box(2)])  # player 1 left, a stranger came
+    assert {m.pid: m.det for m in ms} == {0: 0, 1: None}
+    # solo, the one person in the picture is the player by default (a passer-by can't be told from a player
+    # who changed pose: measured DINOv2 cosines overlap). A strict floor is still available.
+    solo = [Identity(0, [BASE[0]], box(0))]
+    assert assign(solo, np.stack([BASE[3]]), [box(2)])[0].det == 0
+    assert assign(solo, np.stack([BASE[3]]), [box(2)], MatchConfig(solo_floor=0.45))[0].det is None
 
 
 def test_stranger_does_not_steal_a_player_who_is_also_in_frame():

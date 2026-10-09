@@ -55,7 +55,8 @@ class Player:
     seen: bool = True
     last_p: float | None = None
     last_sim: float | None = None
-    box: list[float] | None = None  # UI rings: where they were last seen, x0,y0,x1,y1 px of the view frame (state["view"])
+    box: list[float] | None = None  # UI rings: where they are in the view frame (state["view"]), x0,y0,x1,y1 px;
+    # None when that frame doesn't show them (no ring left behind at an old spot)
 
     @property
     def named(self) -> bool:
@@ -98,6 +99,8 @@ class Settings:
     outdoors: bool = True
     seed: int | None = None
     save_frames: str | None = None  # folder: keep judged frames locally to label later (bench/)
+    follow_every_s: float = 1.0   # HUD: between judged looks, re-find the players this often so their rings follow them
+    follow_max_ms: float = 2500.0  # ...but only while a look is this fast (SAM 3 on a CPU is not: rings move per round)
 
 
 @dataclass
@@ -192,11 +195,15 @@ def players_from_lineup(people: Sequence[dict], names: dict[int, str] | Sequence
 
 # --------------------------------------------------------------------------- game
 
+# phases in which a quick "follow" look may run between the judged ones (never right before a judged look)
+FOLLOW_PHASES = {"intro", "calling", "judging", "rest"}
+
 
 class Game:
     def __init__(self, vision: Vision, io: GameIO, players: Sequence[Player], roster: Roster,
                  settings: Settings | None = None, decision_log: DecisionLog | None = None,
-                 picker: CommandPicker | None = None, game_id: str | None = None, recorder=None):
+                 picker: CommandPicker | None = None, game_id: str | None = None, recorder=None,
+                 vision_lock: asyncio.Lock | None = None):
         if not players:
             raise ValueError("need at least one player: line up in front of the camera first")
         self.s = settings or Settings()
@@ -224,6 +231,8 @@ class Game:
         self._ctx: dict = {}  # the last look of this round: frames + vision result, for the recorder
         self.view_frame: Frame | None = None  # UI: the frame the players' boxes refer to (served as /api/view/<seq>.jpg)
         self.view_seq = 0
+        self.vision_lock = vision_lock or asyncio.Lock()  # one look at a time (judged looks and follow looks)
+        self.look_ms: float | None = None  # wall time of the last look, decides whether following is affordable
 
     @property
     def round_id(self) -> str:
@@ -272,32 +281,51 @@ class Game:
     def _player(self, pid: int | str) -> Player:
         return next(p for p in self.players if p.id == int(pid))
 
-    async def _look(self, task: dict, frames: Sequence[Frame], players: Sequence[Player]) -> dict:
+    async def _look(self, task: dict, frames: Sequence[Frame], players: Sequence[Player], record: bool = True) -> dict:
         idents = [self.roster.identities[p.id] for p in players]
-        t0 = time.perf_counter()
-        # to_thread copies contextvars, so Sentry spans nest under the round's transaction
-        with tracing.vision_span(task.get("kind", "observe"), len(frames), len(players)):
-            res = await asyncio.to_thread(self.vision.run, task, [f.image for f in frames], idents)
-        self._ctx = {"frames": list(frames), "res": res, "look_ms": round(1e3 * (time.perf_counter() - t0), 1)}
+        async with self.vision_lock:
+            t0 = time.perf_counter()
+            # to_thread copies contextvars, so Sentry spans nest under the round's transaction
+            with tracing.vision_span(task.get("kind", "observe"), len(frames), len(players)):
+                res = await asyncio.to_thread(self.vision.run, task, [f.image for f in frames], idents)
+            self.look_ms = round(1e3 * (time.perf_counter() - t0), 1)
+        if record:
+            self._ctx = {"frames": list(frames), "res": res, "look_ms": self.look_ms}
         self.roster.apply(res.get("updates", {}))
         lat = res.get("latency_ms", {})
-        self.last_breakdown = lat
+        if record:
+            self.last_breakdown = lat
         if task.get("kind") in ("pose", "freeze") and lat.get("decide"):
             self.latencies.append(float(lat["decide"]))
         for fr in res.get("frames", []):
             for pid, info in (fr.get("players") or {}).items():
                 p = self._player(pid)
                 p.last_sim = info.get("sim")
-        try:  # UI rings: the last frame of the look, and each player's box in it (kept from before if not seen)
+        try:  # UI rings: the last frame of the look, and each player's box IN THAT FRAME (none if it doesn't show them)
             last = (res.get("frames") or [{}])[-1].get("players") or {}
             for pid, info in last.items():
-                if info.get("seen") and info.get("box"):
-                    self._player(pid).box = [float(v) for v in info["box"]]
+                self._player(pid).box = ([float(v) for v in info["box"]] if info.get("seen") and info.get("box")
+                                         else None)
             if frames:
                 self.view_frame, self.view_seq = frames[-1], self.view_seq + 1
         except Exception as e:  # noqa: BLE001 - the HUD must never break a round
             log.debug("view frame not updated: %s", e)
         return res
+
+    async def follow(self, frame: Frame) -> bool:
+        """A quick look between judged ones, so each player's ring (and the referee's notion of where they
+        stand) follows them as they move. Only matching, no referee model. Skipped when a look is already
+        running, in the beat right before a judged look, or when looks are too slow to keep up."""
+        if self.phase not in FOLLOW_PHASES or self.vision_lock.locked() or not self.alive:
+            return False
+        if self.look_ms is not None and self.look_ms > self.s.follow_max_ms:
+            return False
+        res = await self._look({"kind": "observe"}, [frame], self.alive, record=False)
+        last = (res.get("frames") or [{}])[-1].get("players") or {}
+        for pid, info in last.items():
+            self._player(pid).seen = bool(info.get("seen"))
+        await self._publish()
+        return True
 
     def _save(self, frames: Sequence[Frame], tag: str) -> list[str]:
         if not self.s.save_frames:

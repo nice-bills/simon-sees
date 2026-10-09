@@ -62,6 +62,8 @@ def _common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--indoors", action="store_true", help="skip commands that need grass or trees")
     p.add_argument("--freeze", default="pair", choices=["pair", "pixel"], help="pair = d1 sees before+after (default); pixel = fallback")
     p.add_argument("--pose-frames", type=int, default=2, help="frames judged per pose round")
+    p.add_argument("--follow", default=os.environ.get("SIMON_FOLLOW", "auto"), choices=["auto", "on", "off"],
+                   help="rings follow the players between judged looks (auto = on locally, off with --backend modal)")
     p.add_argument("--log", default=os.environ.get("SIMON_LOG", "logs/decisions.jsonl"))
     p.add_argument("--save-frames", default=os.environ.get("SIMON_SAVE_FRAMES"),
                    help="keep the judged frames in this folder (local only) to label for bench/")
@@ -72,7 +74,8 @@ def _config(a: argparse.Namespace, **kw):
 
     return Config(backend=a.backend, decider=a.decider, model_id=a.model, segmenter=a.segmenter, embedder=a.embedder,
                   embedder_model=a.embedder_model, match_threshold=a.match_threshold, device=a.device, dtype=a.dtype,
-                  compile=a.compile, replay=a.replay, side=a.side, log_path=a.log, settings=_settings(a), **kw)
+                  compile=a.compile, replay=a.replay, side=a.side, log_path=a.log, settings=_settings(a),
+                  follow=getattr(a, "follow", "auto"), **kw)
 
 
 def serve(a: argparse.Namespace) -> int:

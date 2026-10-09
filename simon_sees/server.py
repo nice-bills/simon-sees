@@ -6,6 +6,7 @@ Frames arrive as binary WebSocket messages (one JPEG each). Control messages are
     {"type": "start", "names": {"0": "Kofi", "2": "Ama"}, "skip": [1]}     {"type": "stop"}
 Server -> phone JSON:
     {"type": "lineup", "players": [{"id", "number", "photo", "box"}], "models": {...}, "view": {"w", "h", "url"}}
+    {"type": "lineup", "status": "follow", "players": [{"id", "box" | null, "seen"}], "view": {...}}  (rings follow, lobby)
     {"type": "state", ...}  (players[*].box + view {seq, w, h, url}: the phone's rings, drawn over /api/view/<seq>.jpg)     {"type": "say", "text": ..., "mood": ..., "audio": "/api/audio/<key>.wav" | null}
 HTTP:
     POST /api/feedback  {"kind": "wrong_call", "round_id", "pid", "correct": "out"|"safe"}  or  {"kind": "note", "text"}
@@ -34,12 +35,14 @@ from typing import Any
 from fastapi import Body, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+import numpy as np
 from PIL import Image
 
 from . import tracing
 from .decider import Decider, make_decider
 from .decision_log import DecisionLog
 from .engine import Frame, Game, Settings, lineup, players_from_lineup
+from .identity import Identity
 from .recorder import detect_device, make_recorder
 from .replay import fit, iter_frames
 from .voice import Ears, Voice, estimate_speech_s, parse_name, wav_duration
@@ -73,6 +76,9 @@ class Config:
     sessions_dir: str | None = None  # default SIMON_SESSIONS or ./sessions
     upload: str | None = field(default_factory=lambda: os.environ.get("SIMON_UPLOAD") or None)  # "hf" = auto upload
     hf_repo: str | None = None  # default SIMON_HF_REPO or nice-bill/simon-sees-playtests
+    # rings follow the players between judged looks (lobby and game): auto = on for --backend local, off for modal
+    # (every follow look would be a GPU request); never in a replay (the replay is the camera, kept reproducible)
+    follow: str = field(default_factory=lambda: os.environ.get("SIMON_FOLLOW", "auto"))
 
 
 def build_vision(cfg: Config, decider: Decider | None = None):
@@ -206,7 +212,8 @@ def create_app(cfg: Config, decider: Decider | None = None, vision=None) -> Fast
     dlog = DecisionLog(cfg.log_path)
     st: dict[str, Any] = {"vision": vision, "model_error": None, "game": None, "task": None, "games": [],
                           "loading": vision is None, "lineup": None, "photos": {}, "lining_up": False,
-                          "rec": rec, "uploading": None}
+                          "rec": rec, "uploading": None, "follow_ids": None, "follow_for": None, "look_ms": None}
+    vision_lock = asyncio.Lock()  # one look at a time: line-up, the game's looks, and follow looks
     if vision is None and decider is not None:
         st["vision"], st["loading"] = build_vision(cfg, decider), False
 
@@ -260,6 +267,71 @@ def create_app(cfg: Config, decider: Decider | None = None, vision=None) -> Fast
                 return
         log.info("TTS: %d lines ready in %.1fs", len(lines), time.perf_counter() - t0)
 
+    def follow_enabled() -> bool:
+        mode = (cfg.follow or "auto").lower()
+        if cfg.replay or mode in ("0", "off", "false", "no"):
+            return False
+        return mode in ("1", "on", "true", "yes") or (mode == "auto" and cfg.backend != "modal")
+
+    async def lobby_follow(frame: Frame) -> bool:
+        """Between Line up and Start: find the people on the team sheet again so their rings follow them."""
+        people = st["lineup"]
+        if not people or st["lining_up"] or vision_lock.locked():
+            return False
+        if st["follow_for"] is not people:  # a fresh line-up: one identity per person, from their line-up crop
+            st["follow_ids"] = [Identity(i, [np.asarray(p["emb"], dtype=np.float32)],
+                                         tuple(p["box"]) if p.get("box") else None) for i, p in enumerate(people)]
+            st["follow_for"] = people
+        ids = st["follow_ids"]
+        async with vision_lock:
+            t0 = time.perf_counter()
+            res = await asyncio.to_thread(st["vision"].run, {"kind": "observe"}, [frame.image], ids)
+            st["look_ms"] = 1e3 * (time.perf_counter() - t0)
+        if st["lineup"] is not people or st["lining_up"] or (st["task"] and not st["task"].done()):
+            return False  # lined up again / the game started meanwhile: this look is stale
+        found = (res.get("frames") or [{}])[0].get("players") or {}
+        players = []
+        for ident in ids:
+            info = found.get(str(ident.pid)) or {}
+            box = [float(v) for v in info["box"]] if info.get("seen") and info.get("box") else None
+            if box:
+                ident.last_box = tuple(box)
+                people[ident.pid]["box"] = box  # the game starts tracking from here, not the line-up spot
+            players.append({"id": ident.pid, "box": box, "seen": bool(box)})
+        st["lineup_frame"] = frame
+        w, h = frame.image.size
+        await hub.broadcast({"type": "lineup", "status": "follow", "players": players,
+                             "view": {"w": w, "h": h, "url": f"/api/view/l{int(time.time() * 1000)}.jpg"}})
+        return True
+
+    async def follow_loop() -> None:
+        """Rings follow the players: a quick look (no referee model) about once a second while nothing else is
+        looking. Turns itself down when looks are slow (SAM 3 on a CPU), so it never holds up a judged look."""
+        if not follow_enabled():
+            return
+        every = max(0.3, cfg.settings.follow_every_s)
+        last = -1
+        while True:
+            await asyncio.sleep(every)
+            try:
+                frame = frames.latest
+                if st["vision"] is None or frame is None or frames.count == last or not hub.sockets:
+                    continue
+                if st["look_ms"] is not None and st["look_ms"] > cfg.settings.follow_max_ms:
+                    continue
+                last = frames.count
+                game = st["game"] if st["task"] and not st["task"].done() else None
+                if game is not None:
+                    done = await game.follow(frame)
+                    if done and game.look_ms is not None:
+                        st["look_ms"] = game.look_ms
+                else:
+                    await lobby_follow(frame)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001 - following is a nicety; it must never break anything
+                log.debug("follow look failed: %s", e)
+
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI):
         if st["vision"] is None:
@@ -267,7 +339,9 @@ def create_app(cfg: Config, decider: Decider | None = None, vision=None) -> Fast
         else:
             note_models()
         threading.Thread(target=prewarm_voice, daemon=True).start()
+        follower = asyncio.create_task(follow_loop())
         yield
+        follower.cancel()
         if st["task"]:
             st["task"].cancel()
         if st["uploading"] and not st["uploading"].done():
@@ -407,7 +481,10 @@ def create_app(cfg: Config, decider: Decider | None = None, vision=None) -> Fast
         st["lining_up"] = True
         await hub.broadcast({"type": "lineup", "status": "looking", "players": []})
         try:
-            res = await lineup(st["vision"], hub)
+            async with vision_lock:
+                t0 = time.perf_counter()
+                res = await lineup(st["vision"], hub)
+                st["look_ms"] = 1e3 * (time.perf_counter() - t0)
         except Exception as e:  # noqa: BLE001
             log.exception("line-up failed")
             await hub.broadcast({"type": "error", "message": f"line-up failed: {type(e).__name__}: {e}"})
@@ -457,7 +534,7 @@ def create_app(cfg: Config, decider: Decider | None = None, vision=None) -> Fast
             await hub.broadcast({"type": "error", "message": "nobody left on the team sheet"})
             return
         players, roster = players_from_lineup(st["lineup"], names, keep)
-        game = Game(st["vision"], hub, players, roster, cfg.settings, dlog, recorder=rec)
+        game = Game(st["vision"], hub, players, roster, cfg.settings, dlog, recorder=rec, vision_lock=vision_lock)
         st["game"] = game
         st["games"].append(game)
 

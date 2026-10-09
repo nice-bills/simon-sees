@@ -33,12 +33,19 @@ Every frame batch goes through four steps (`simon_sees/pipeline.py`):
    Type a name on a card or say it (faster-whisper); untouched cards stay *Player N* and Simon calls them
    *"Number N"*. Each player's masked crop is embedded with **DINOv3**: that vector is their identity.
    Nobody describes what they look like or what they wear; there is no text description of a person anywhere.
-2. **Segmentation.** Each round, SAM 3 finds every person in the new frame (masks + boxes). Tiny far-away
-   passers-by are dropped.
+2. **Segmentation.** Each round, SAM 3 finds every person in the new frame (masks + boxes). Only tiny figures
+   (under 12% of the frame height, i.e. far behind the players) are dropped, so a player can step well back.
 3. **Embedding match.** Each person's masked crop is embedded with DINOv3 and compared (cosine) with every
    player's small gallery: the line-up embedding plus a few confident sightings from the game, so the
    signature follows lighting and pose. A Hungarian assignment pairs players with people one-to-one, with a small
-   bonus for staying in the same spot. Below the threshold a player is *not seen*, never guessed.
+   bonus for staying in the same spot. Below the threshold (0.45) a player is *not seen*, unless the
+   detection is where they just were, or the head count settles it: a pose change *and* a move between two
+   looks can drop the cosine to ~0.25-0.4 (measured with DINOv2-small: one person standing vs. squatting 0.23,
+   while two different people standing scored up to 0.57), so when the frame holds exactly as many people as
+   there are players, the assignment is accepted down to 0.25 if each pairing is mutual-best (players are
+   never swapped on the count alone). **Solo, the one person in the picture is the player, wherever they
+   stand**; with a passer-by in shot too, the player's best match must clearly beat the runner-up. Every crop
+   the referee sees, and the freeze comparison, comes from where the player is in *that* frame.
 4. **Judging per crop.** Each matched player's own crop (background dimmed by the SAM mask so the
    neighbour doesn't count, grass and trees still visible) goes to the referee, the fine-tuned **Qwen3.5-4B** on
    Tinker (see *Best Use of Tinker* below) or **Liquid d1** locally, with one yes/no question:
@@ -202,7 +209,8 @@ python -m simon_sees dryrun --replay my_clip.mp4 --names Kofi Ama ""   # line-up
 Useful flags: `--model LiquidAI/d1-omni-600M` (smaller, experimental), `--device cuda|mps|cpu`,
 `--dtype bf16`, `--compile` (CUDA graphs on NVIDIA), `--indoors` (no grass/tree commands),
 `--save-frames captures` (keep judged frames locally to label for the benchmark), `--tts browser`,
-`--segmenter sam3|sam3.1|fallback`, `--embedder dinov3|dinov2`, `--match-threshold 0.45`.
+`--segmenter sam3|sam3.1|fallback`, `--embedder dinov3|dinov2`, `--match-threshold 0.45`,
+`--follow auto|on|off` (rings follow the players between judged looks; auto = on locally, off with Modal).
 
 ### Playtesting: record, correct, upload
 
@@ -227,7 +235,11 @@ The camera is the interface. The picture (in a replay, the exact frame the refer
 a thin HUD floats on it, in the style of the viral juggling-counter app: a huge condensed numeral for the
 players still in, letter-spaced caps labels, one lime accent, scrims instead of panels. Every player gets a
 glowing ring drawn from their SAM box with a name chip (`2 · AMA`); the ring's colour is the verdict (lime safe,
-red out with the ring breaking, amber "Simon didn't say", dashed "lost you"). At the bottom: the call, then the
+red out with the ring breaking, amber "Simon didn't say", "lost you" when the latest frame doesn't show them).
+The rings follow the players: between judged looks the server re-finds everyone about once a second (matching
+only, no referee call; skipped right before a judged look, and switched off automatically when one look takes
+longer than 2.5 s, e.g. SAM 3 on a CPU, where rings move once per round instead). With the live camera the
+whole field of view is shown, so there is no fixed spot to stand in. At the bottom: the call, then the
 referee's confidence as a per-round sparkline, and `ROUND · CALL TIME · TIME`. Models, latencies and the
 "Wrong call" controls live in a slide-up "Ref's notes" sheet. Fonts (Barlow Condensed + Inter, SIL OFL) are
 self-hosted, so it works offline.

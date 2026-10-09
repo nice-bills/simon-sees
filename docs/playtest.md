@@ -110,6 +110,8 @@ press **Ctrl+C** at the end it uploads the session for you (or makes a zip if `H
 
 1. On the phone: **Turn camera on**, flip to the back camera, prop the phone so everyone is in shot head to toe.
 2. Everyone lines up facing the phone, a little apart. Tap **Line up**, type names if you like, tap **Start**.
+   The line-up only takes everyone's photo: after it you can move anywhere in the picture (even step well back),
+   and your ring follows you. Playing alone works the same way: whoever is in the picture is you.
 3. Play. Turn the volume up.
 4. **When the referee gets one wrong, tap Wrong call.**
    - On a red "out" screen, **Wrong call** means "that player should not be out". One tap.

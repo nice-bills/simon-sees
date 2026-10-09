@@ -131,3 +131,71 @@ def test_hud_rings_get_boxes_and_the_judged_frame(tmp_path, monkeypatch):
         r = c.get(st["view"]["url"])
         assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
         until(ws, lambda m: m["type"] == "state" and m.get("phase") == "over")
+
+
+class _SoloPixelSegmenter:
+    """One person: the bounding box of everything that isn't grass (works on JPEG frames from the 'phone')."""
+
+    name, has_masks = "pixel", False
+
+    def segment(self, images):
+        from simon_sees.vision import Detection
+        import numpy as np
+
+        out = []
+        for im in images:
+            a = np.asarray(im.convert("RGB"), dtype=np.int16)
+            diff = np.abs(a - np.array([110, 160, 90])).sum(axis=2) > 60
+            ys, xs = np.nonzero(diff)
+            out.append([Detection((float(xs.min()), float(ys.min()), float(xs.max() + 1), float(ys.max() + 1)), 0.9)]
+                       if len(xs) > 50 else [])
+        return out
+
+
+def test_rings_follow_a_solo_player_in_the_lobby_and_in_the_game(tmp_path, monkeypatch):
+    """Playtest bug 1: the ring stayed where the player lined up. Between judged looks the server now re-finds
+    the players about once a second, so the ring follows them (lobby: status=follow; game: state boxes)."""
+    from dataclasses import replace
+
+    from simon_sees.decider import MockDecider
+
+    monkeypatch.setattr("simon_sees.server.estimate_speech_s", lambda t: 0.0)
+    cfg = fast_cfg(tmp_path, frame_timeout_s=0.05, follow="on")
+    cfg.settings = replace(cfg.settings, follow_every_s=0.3, rest_s=0.8, max_rounds=2)
+    vision = LocalVision(Stack(_SoloPixelSegmenter(), MockEmbedder(), MockDecider(lambda n, m: 0.9 if n == "did" else 0.05)))
+    app = create_app(cfg, vision=vision)
+    centre, left = scene([None, "a", None]), scene(["a", None, None])
+    with TestClient(app) as c, c.websocket_connect("/ws") as ws:
+        ws.receive_text()
+        ws.send_bytes(jpeg(centre))
+        ws.send_text(json.dumps({"type": "lineup"}))
+        m, _ = until(ws, lambda m: m["type"] == "lineup" and m.get("status") == "done", feed=lambda: ws.send_bytes(jpeg(centre)))
+        assert len(m["players"]) == 1 and 250 <= m["players"][0]["box"][0] <= 270
+        # the player walks to the left edge before tapping Start: the lobby ring follows
+        f, _ = until(ws, lambda m: m["type"] == "lineup" and m.get("status") == "follow"
+                     and (m["players"][0]["box"] or [999])[0] < 100, feed=lambda: ws.send_bytes(jpeg(left)))
+        assert f["players"][0]["seen"] is True and f["view"]["w"] == 640
+        ws.send_text(json.dumps({"type": "start", "names": {}}))
+        boxes = []
+
+        def pred(msg):
+            if msg["type"] == "state" and msg.get("players"):
+                boxes.append(msg["players"][0]["box"])
+            return msg["type"] == "state" and msg.get("phase") == "over"
+
+        until(ws, pred, feed=lambda: ws.send_bytes(jpeg(left)))
+        assert boxes and all(b is not None and b[0] < 100 for b in boxes if b is not None)
+        assert any(b is not None for b in boxes)
+
+
+def test_follow_is_off_in_a_replay(tmp_path):
+    cfg = fast_cfg(tmp_path, replay=str(PEOPLE), follow="on")
+    app = create_app(cfg, vision=band_vision())
+    with TestClient(app) as c, c.websocket_connect("/ws") as ws:
+        ws.receive_text()
+        ws.send_text(json.dumps({"type": "lineup"}))
+        _, msgs = until(ws, lambda m: m["type"] == "lineup" and m.get("status") == "done")
+        time.sleep(1.2)
+        ws.send_text(json.dumps({"type": "info"}))
+        _, msgs = until(ws, lambda m: m["type"] == "info")
+        assert not any(m.get("status") == "follow" for m in msgs)

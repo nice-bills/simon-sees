@@ -89,7 +89,8 @@ def _dtype(device: str, pref: str = "auto"):
 
 
 def keep_people(dets: list[Detection], frame_h: int, min_score: float, min_height: float, max_people: int) -> list[Detection]:
-    """Drop far-away passers-by (tiny boxes) and weak hits; players stand 3-5 m from the phone."""
+    """Drop weak hits and tiny far-away figures. min_height is a fraction of the frame height: 0.12 keeps a
+    player who steps back 8-10 m from a propped-up phone (0.25 used to drop anyone past ~5 m, playtest)."""
     out = [d for d in dets if d.score >= min_score and d.height >= min_height * frame_h]
     out.sort(key=lambda d: -d.score)
     return out[:max_people]
@@ -104,7 +105,7 @@ class Sam3Segmenter:
     has_masks = True
 
     def __init__(self, model_id: str = SAM3_ID, device: str = "auto", dtype: str = "auto", prompt: str = "person",
-                 threshold: float = 0.5, min_height: float = 0.25, max_people: int = 8, image_size: int | None = None):
+                 threshold: float = 0.5, min_height: float = 0.12, max_people: int = 8, image_size: int | None = None):
         import torch
         from transformers import Sam3Config, Sam3Model, Sam3Processor
 
@@ -154,7 +155,7 @@ class Sam31Segmenter:
 
     has_masks = True
 
-    def __init__(self, prompt: str = "person", compile: bool = False, min_height: float = 0.25, max_people: int = 8,
+    def __init__(self, prompt: str = "person", compile: bool = False, min_height: float = 0.12, max_people: int = 8,
                  threshold: float = 0.5):
         from sam3.model_builder import build_sam3_predictor  # type: ignore
 
@@ -199,7 +200,7 @@ class FallbackDetector:
     has_masks = False
 
     def __init__(self, model_id: str = FALLBACK_DETECTOR_ID, device: str = "auto", threshold: float = 0.5,
-                 min_height: float = 0.25, max_people: int = 8):
+                 min_height: float = 0.12, max_people: int = 8):
         import torch
         from transformers import AutoImageProcessor, RTDetrForObjectDetection
 

@@ -119,7 +119,9 @@ function layoutScene() {
   const under = ($("play").hidden ? scr.querySelector(".hud-bottom") : $("stage")).getBoundingClientRect().top || H * 0.6;
   const goneRows = 26 * goneLayout(ringItems().filter((r) => r.kind === "gone" || !r.box)).rows;
   const top = Math.min(hudTop + 38 + goneRows, H * 0.4), bot = Math.max(under - 24, top + 120);
-  const F = focusBox(ms) || [ms.w * 0.2, 0, ms.w * 0.8, ms.h];
+  // live camera: show the whole field of view, so players see all the room they have and their rings move
+  // inside it (framing on the line-up spot read as "stand in this box"); replays frame the judged players
+  const F = state.stream ? [0, 0, ms.w, ms.h] : (focusBox(ms) || [ms.w * 0.2, 0, ms.w * 0.8, ms.h]);
   const fw = F[2] - F[0], fh = F[3] - F[1];
   let s = Math.min((W - 24) / fw, (bot - top) / fh);
   // fill the width when the players still fit the band; a crowded HUD may shrink the picture a little (its sides
@@ -157,7 +159,7 @@ function goneLayout(items) {
 // which rings to draw: the line-up (lobby) or the board (play), each with a verdict kind
 function ringItems() {
   if (!state.playing && !(state.s && state.s.phase === "over" && !$("play").hidden)) {
-    return playing().map((p) => ({ id: p.id, number: p.number, name: (state.names[p.id] || "").trim(), box: p.box, kind: "found" }));
+    return playing().map((p) => ({ id: p.id, number: p.number, name: (state.names[p.id] || "").trim(), box: p.box, kind: p.seen === false ? "lost" : "found" }));
   }
   const s = state.s || {};
   const r = state.lastRound && state.lastRound.round === s.round ? state.lastRound : null;  // verdicts for this round
@@ -652,6 +654,13 @@ function pump() {  // send ~FPS downscaled JPEGs; skip a beat if the network is 
 // ---------------------------------------------------------------- line-up: a ring forms around each person found
 const short = (id) => String(id).replace(/^FALLBACK /, "FALLBACK ").replace(/(LiquidAI|facebook|PekingU|Qwen)\//g, "").replace(/-pretrain-lvd1689m/, "").replace(/\(Tinker tinker:\/\/[^)]*\)/, "(Tinker)");
 function onLineup(msg) {
+  if (msg.status === "follow") {  // the rings follow the players between Line up and Start (no new photos, names kept)
+    if (state.lining || state.playing) return;
+    const by = new Map((msg.players || []).map((p) => [p.id, p]));
+    state.lineup.forEach((p) => { const u = by.get(p.id); if (u) { p.box = u.box || null; p.seen = u.seen; } });
+    if (msg.view) setView(msg.view); else layoutScene();
+    return;
+  }
   if (msg.status === "looking") {
     state.lining = true;
     $("lineup").textContent = "Looking…";

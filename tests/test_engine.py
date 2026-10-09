@@ -210,10 +210,11 @@ def test_reid_follows_players_who_swap_places():
 
 
 def test_assign_rejects_strangers_below_threshold():
+    # solo_floor set: without it, the only person in a solo game is the player (test_tracking.py)
     ident = Identity(0, [np.array([1.0, 0.0])])
-    ms = assign([ident], np.array([[0.0, 1.0]]), [(0, 0, 10, 10)], MatchConfig(threshold=0.5))
+    ms = assign([ident], np.array([[0.0, 1.0]]), [(0, 0, 10, 10)], MatchConfig(threshold=0.5, solo_floor=0.5))
     assert ms[0].det is None
-    ms = assign([ident], np.array([[0.9, 0.436]]), [(0, 0, 10, 10)], MatchConfig(threshold=0.5))
+    ms = assign([ident], np.array([[0.9, 0.436]]), [(0, 0, 10, 10)], MatchConfig(threshold=0.5, solo_floor=0.5))
     assert ms[0].det == 0
 
 
@@ -221,8 +222,10 @@ def test_assign_keeps_a_player_through_a_big_pose_change_on_the_same_spot():
     # cosine only 0.3 (arms out like an airplane), but the detection is where the player just was
     ident = Identity(0, [np.array([1.0, 0.0])], last_box=(100, 50, 200, 400))
     emb = np.array([[0.3, 0.954]])
-    assert assign([ident], emb, [(90, 40, 260, 400)], MatchConfig(threshold=0.45))[0].det == 0
-    assert assign([ident], emb, [(400, 40, 500, 400)], MatchConfig(threshold=0.45))[0].det is None
+    assert assign([ident], emb, [(90, 40, 260, 400)], MatchConfig(threshold=0.45, solo_floor=0.45))[0].det == 0
+    assert assign([ident], emb, [(400, 40, 500, 400)], MatchConfig(threshold=0.45, solo_floor=0.45))[0].det is None
+    # by default a solo player is the one person in the picture, wherever they went (playtest bug 1)
+    assert assign([ident], emb, [(400, 40, 500, 400)], MatchConfig(threshold=0.45))[0].det == 0
 
 
 def test_gallery_learns_confident_sightings_and_keeps_the_lineup_one():

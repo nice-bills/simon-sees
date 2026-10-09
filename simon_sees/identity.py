@@ -14,6 +14,13 @@ new poses. Each frame:
 The second clause is tracking: a big pose change (arms out like an airplane, a deep squat) moves the
 embedding a long way, but the person is still standing in the same spot.
 
+Counting is the third: people move AND change pose between two looks (walk to the left, then squat), and
+then neither appearance nor position vouches for them. When the frame holds exactly as many people as there
+are players, the Hungarian assignment is accepted down to a much lower floor, provided the detection looks
+more like this player than like any other player (so two players are never swapped on the count alone).
+Solo, the one person in the picture is the player, wherever they stand; with a passer-by in shot as well,
+the player's best detection is taken when it clearly beats the runner-up.
+
 Pure functions + a small dataclass, so the same code runs locally and on the Modal GPU.
 """
 
@@ -141,6 +148,9 @@ class MatchConfig:
     margin: float = 0.0  # extra: accepted sim must beat the runner-up by this much (0 = off)
     low_threshold: float = 0.2  # ...or this much, when the detection continues the player's track
     track_iou: float = 0.3  # track continues: IoU with the last box, or the centre within half a box width
+    count_floor: float = 0.25  # as many people as players: accept the assignment down to this (mutual best only)
+    solo_floor: float = -1.0  # one player, one person in the picture: that person is the player (-1 = always)
+    solo_margin: float = 0.1  # one player, several people: their best detection must beat the next one by this
 
 
 def continues_track(last: Box | None, box: Box, min_iou: float = 0.3) -> bool:
@@ -164,7 +174,9 @@ def assign(identities: Sequence[Identity], embs: np.ndarray, boxes: Sequence[Box
     for r, ident in enumerate(identities):
         if ident.last_box is not None:
             bonus[r] = [cfg.track_bonus * iou(ident.last_box, b) for b in boxes]
-    pairs = dict(hungarian(1.0 - (sims + bonus)))
+    score = sims + bonus
+    pairs = dict(hungarian(1.0 - score))
+    n_ids, n_dets = len(identities), sims.shape[1]
     out = []
     for r, ident in enumerate(identities):
         d = pairs.get(r)
@@ -173,11 +185,27 @@ def assign(identities: Sequence[Identity], embs: np.ndarray, boxes: Sequence[Box
             continue
         s = float(sims[r, d])
         ok = s >= cfg.threshold or (s >= cfg.low_threshold and continues_track(ident.last_box, boxes[d], cfg.track_iou))
-        if ok and cfg.margin and sims.shape[1] > 1:
+        if ok and cfg.margin and n_dets > 1:
             others = np.delete(sims[r], d)
             ok = s - float(others.max()) >= cfg.margin or s >= cfg.remember_above
+        if not ok:
+            ok = _counted(r, d, s, score, n_ids, n_dets, cfg)
         out.append(Match(ident.pid, d if ok else None, s))
     return out
+
+
+def _counted(r: int, d: int, s: float, score: np.ndarray, n_ids: int, n_dets: int, cfg: MatchConfig) -> bool:
+    """The count rule (see the module docstring): accept a low-similarity assignment when the head count says
+    who it must be. Never used to hand a detection to a player it looks less like than another player."""
+    if n_ids == 1:
+        if n_dets == 1:
+            return s >= cfg.solo_floor
+        others = np.delete(score[r], d)
+        return s >= cfg.count_floor and float(score[r, d] - others.max()) >= cfg.solo_margin
+    if n_dets != n_ids or s < cfg.count_floor:
+        return False
+    # mutual best: this is the player's best detection, and no other player looks more like it
+    return bool(score[r, d] >= score[r].max() and score[r, d] > np.delete(score[:, d], r).max())
 
 
 def order_left_to_right(boxes: Sequence[Box]) -> list[int]:
