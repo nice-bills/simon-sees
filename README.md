@@ -11,7 +11,7 @@ Prop a phone on a stump. Step back. A voice calls *"Simon says stand on one foot
 <p align="center"><sub><b>Replay demo, not the field test:</b> the phone page at 390×844 playing a game over the AI-generated
 sample photos in <code>samples/people</code>, with the real models on a 2-vCPU CPU: <code>facebook/sam3</code> (560 px) finds the
 players, <code>facebook/dinov2-small</code> (the FALLBACK while the DINOv3 gate is pending) tells them apart, and
-<code>LiquidAI/d1-omni-600M</code> judges each player's crop. The video is sped up; the decision table shown in the Ref's notes drawer holds the model's actual
+the Tinker-tuned referee (<code>Qwen/Qwen3.5-4B</code> + LoRA, sampled on Tinker) judges each player's crop. The video is sped up; the decision table shown in the Ref's notes drawer holds the model's actual
 probabilities. With sound: <a href="demo/simon-sees-demo.mp4">demo/simon-sees-demo.mp4</a> (Simon's voice is Kokoro TTS).
 <!-- TODO(field test): add the real outdoor clip --></sub></p>
 
@@ -77,11 +77,12 @@ DINOv2-small (DINOv3 was still gated for that account), re-identification was fu
 the line-up, **including the frame where all three players swapped places** (cosine 0.94–0.96 to the right
 person), with no identity swaps; the one miss was a squatting player reported as *not seen* (cosine 0.30), which the
 rules turn into a warning, not an elimination. These are 7 generated photos, not a field test or a benchmark.
-In the recorded replay demo on the same box, one pose round took SAM 3 19.3 s for the frame, DINOv2 0.4 s, and
-`LiquidAI/d1-omni-600M` 15.4 s for one batched call over the three players' crops (an earlier run of the same
-pipeline measured 9.2–9.7 s per 3-crop batch); the demo is sped up x2.4 to fit in a minute. In that round
-("Simon says put your hands on your head") d1 gave P = 0.12, 0.71 and 0.14, which matches the frame: only the
-middle player had her hands on her head. On a CPU this is far too slow for live play: use a GPU laptop, a Mac
+In the recorded replay demo on the same box (re-recorded Oct 9 2026 with the Tinker-tuned referee), the one pose
+round took SAM 3 56.5 s for the frame, DINOv2 1.0 s, and the fine-tuned Qwen3.5-4B referee on Tinker 9.1 s for one
+batch of the three players' crops (sent as concurrent requests); the demo is sped up x3.9 to fit in a minute. In that
+round ("Simon says put your hands on your head") the referee gave P = 0.00, 0.995 and 0.00, which matches the
+frame: only the middle player had her hands on her head, so she wins after one round. (The earlier recording with
+`LiquidAI/d1-omni-600M` gave 0.12, 0.71 and 0.14 on the same frame.) With SAM 3 on a CPU this is far too slow for live play: use a GPU laptop, a Mac
 (`mps`), or the Modal backend below.
 
 ### Why a decision model and not a chatbot VLM

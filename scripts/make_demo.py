@@ -61,8 +61,10 @@ def caption_from_log(path: str) -> str:
         else ("SAM 3.1" if "sam3.1" in seg else f"{short(seg)} FALLBACK detector")
     emb_s = f"{'DINOv2 FALLBACK' if 'dinov2' in emb else 'DINOv3' if 'dinov3' in emb else short(emb)}"
     if "Tinker" in dec:  # the fine-tuned referee runs on Tinker's servers, the vision half on this CPU
-        return (f"REPLAY DEMO: AI-generated sample photos. {seg_s} + {emb_s} on CPU, referee Qwen3.5-4B + LoRA "
-                "on Tinker. Not the field test.")
+        emb_s = "DINOv2-small" if "dinov2" in emb else emb_s
+        seg_s = seg_s.split(" (")[0]  # keep the 4-line caption strip from overflowing
+        return (f"REPLAY of AI-generated sample photos, not a live outdoor game. {seg_s} segmentation + {emb_s} "
+                "re-ID on CPU, Tinker-tuned Qwen3.5-4B referee.")
     return (f"REPLAY DEMO: AI-generated sample photos, real models on CPU: {seg_s} + {emb_s} + {short(dec)}. "
             "Not the outdoor field test.")
 
@@ -140,6 +142,8 @@ def main() -> int:
             else:
                 cur = f"{cur} {w}".strip()
         lines.append(cur)
+        if len(lines) > 4:
+            print(f"WARNING: caption wraps to {len(lines)} lines; only 4 fit, the rest is cut")
         for k, line in enumerate(lines[:4]):
             vf.append(f"drawtext=fontfile={FONT}:text='{line}':fontcolor=#ffd400:fontsize=14:x=(w-tw)/2:y=h-74+{k * 18}")
     picture = tmp / "picture.mp4"
