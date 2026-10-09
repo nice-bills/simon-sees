@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simon-sees"
+version = "0.1.0"
+description = "Simon Says for friends outdoors, refereed live by an open decision model (Liquid d1)"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "python-multipart>=0.0.9",
+  "pillow>=10",
+  "numpy>=1.26",
+  "huggingface_hub>=0.30",
+]
+
+[project.optional-dependencies]
+model = ["torch>=2.4", "torchvision", "transformers>=5.15", "accelerate", "safetensors", "huggingface_hub"]
+tts = ["kokoro>=0.9", "soundfile"]
+stt = ["faster-whisper>=1.0"]
+video = ["opencv-python-headless"]
+sentry = ["sentry-sdk>=2.64"]
+dev = ["pytest>=8", "httpx"]
+
+[project.scripts]
+simon-sees = "simon_sees.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["simon_sees*"]
+
+[tool.setuptools.package-data]
+simon_sees = ["static/*", "static/fonts/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

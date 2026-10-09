@@ -1,0 +1,6 @@
+# Optional extras, each one switches on by itself when installed
+kokoro>=0.9          # open TTS (Kokoro-82M, Apache-2.0). Linux also needs: apt install espeak-ng
+soundfile
+faster-whisper>=1.0  # open STT for spoken player registration
+sentry-sdk>=2.64     # Sentry Agent Tracing, only active when SENTRY_DSN is set
+opencv-python-headless  # replay a video file in dry-run mode

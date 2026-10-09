@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - name: Dry run in the terminal (mock decider, replayed frames)
+        run: python -m simon_sees dryrun --replay samples/people --segmenter mock --embedder mock --decider mock --fast --seed 3 --log /tmp/decisions.jsonl
+
+  e2e:
+    # Phone web client, end to end, with e2e by TesterArmy (https://github.com/tester-army/e2e).
+    # The runner starts the real server in dry-run mode (replayed frames + seeded mock decider).
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r ../requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+      - name: Install browsers
+        run: npx e2e-web install chromium --with-deps
+      - name: Run e2e (desktop + phone viewport)
+        run: npx e2e run --reporter list,junit
+        env:
+          SIMON_PYTHON: python
+          E2E_BROWSER: chromium
+          E2E_TELEMETRY_DISABLED: "1"
+          # optional: enables the agent.act / agent.assert test; without it that test is skipped
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            e2e/.e2e/report.json
+            e2e/.e2e/junit.xml
+            e2e/.e2e/artifacts
+            e2e/.e2e/logs
+          if-no-files-found: warn
+          retention-days: 7

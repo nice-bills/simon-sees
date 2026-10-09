@@ -1,0 +1,10 @@
+# The decision model. d1-3B needs transformers>=5.14, d1-omni-600M >=5.15.
+# Pinned to what was tested (and what Liquid's System One Arcade Space pins).
+-r requirements.txt
+torch>=2.4
+torchvision
+transformers==5.17.0
+safetensors>=0.6
+accelerate>=1.0
+huggingface_hub>=1.0
+hf_xet

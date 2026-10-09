@@ -1,0 +1,269 @@
+{
+ "measured_at": "2026-10-08 18:07 UTC",
+ "machine": {
+  "platform": "Linux-6.12.110+-aarch64-with-glibc2.41",
+  "cpus": 2,
+  "torch": "2.14.1+cpu",
+  "threads": 2
+ },
+ "models": {
+  "segmenter": "facebook/sam3@560px",
+  "embedder": "FALLBACK facebook/dinov2-small",
+  "decider": null
+ },
+ "frame_side_px": 640,
+ "load_s": 14.1,
+ "segment": [
+  {
+   "frame": "000_lineup",
+   "people": 3,
+   "segment_ms": 18504.8,
+   "warmup": true,
+   "scores": [
+    0.98,
+    0.974,
+    0.98
+   ],
+   "has_masks": true
+  },
+  {
+   "frame": "001_lineup",
+   "people": 3,
+   "segment_ms": 17335.9,
+   "warmup": false,
+   "scores": [
+    0.98,
+    0.974,
+    0.98
+   ],
+   "has_masks": true
+  },
+  {
+   "frame": "002_onefoot_hands-head_stand",
+   "people": 3,
+   "segment_ms": 16844.5,
+   "warmup": false,
+   "scores": [
+    0.982,
+    0.974,
+    0.979
+   ],
+   "has_masks": true
+  },
+  {
+   "frame": "003_arms-up_stand_arms-up",
+   "people": 3,
+   "segment_ms": 16929.0,
+   "warmup": false,
+   "scores": [
+    0.977,
+    0.972,
+    0.979
+   ],
+   "has_masks": true
+  },
+  {
+   "frame": "004_swapped-places_stand",
+   "people": 3,
+   "segment_ms": 16326.4,
+   "warmup": false,
+   "scores": [
+    0.981,
+    0.979,
+    0.98
+   ],
+   "has_masks": true
+  },
+  {
+   "frame": "005_airplane_squat_airplane",
+   "people": 3,
+   "segment_ms": 16402.1,
+   "warmup": false,
+   "scores": [
+    0.954,
+    0.962,
+    0.951
+   ],
+   "has_masks": true
+  },
+  {
+   "frame": "006_centre-player-left-frame",
+   "people": 2,
+   "segment_ms": 16185.2,
+   "warmup": false,
+   "scores": [
+    0.979,
+    0.982
+   ],
+   "has_masks": true
+  }
+ ],
+ "segment_ms_median_warm": 16623.3,
+ "enrol": {
+  "people": 3,
+  "latency_ms": {
+   "segment": 16521.8,
+   "embed": 331.5,
+   "match": 0.0,
+   "decide": 0.0,
+   "total": 16892.3
+  }
+ },
+ "reid": [
+  {
+   "frame": "001_lineup",
+   "left_to_right": [
+    "P1",
+    "P2",
+    "P3"
+   ],
+   "expected": [
+    "P1",
+    "P2",
+    "P3"
+   ],
+   "correct": true,
+   "sims": {
+    "P1": 1.0,
+    "P2": 1.0,
+    "P3": 1.0
+   },
+   "latency_ms": {
+    "segment": 16422.6,
+    "embed": 307.1,
+    "match": 2.2,
+    "decide": 0.0,
+    "total": 16757.4
+   }
+  },
+  {
+   "frame": "002_onefoot_hands-head_stand",
+   "left_to_right": [
+    "P1",
+    "P2",
+    "P3"
+   ],
+   "expected": [
+    "P1",
+    "P2",
+    "P3"
+   ],
+   "correct": true,
+   "sims": {
+    "P1": 0.8505,
+    "P2": 0.711,
+    "P3": 0.9863
+   },
+   "latency_ms": {
+    "segment": 16552.6,
+    "embed": 315.1,
+    "match": 2.1,
+    "decide": 0.0,
+    "total": 16896.2
+   }
+  },
+  {
+   "frame": "003_arms-up_stand_arms-up",
+   "left_to_right": [
+    "P1",
+    "P2",
+    "P3"
+   ],
+   "expected": [
+    "P1",
+    "P2",
+    "P3"
+   ],
+   "correct": true,
+   "sims": {
+    "P1": 0.713,
+    "P2": 0.9627,
+    "P3": 0.7311
+   },
+   "latency_ms": {
+    "segment": 16424.5,
+    "embed": 302.4,
+    "match": 1.0,
+    "decide": 0.0,
+    "total": 16756.2
+   }
+  },
+  {
+   "frame": "004_swapped-places_stand",
+   "left_to_right": [
+    "P3",
+    "P1",
+    "P2"
+   ],
+   "expected": [
+    "P3",
+    "P1",
+    "P2"
+   ],
+   "correct": true,
+   "sims": {
+    "P1": 0.9629,
+    "P2": 0.9377,
+    "P3": 0.9353
+   },
+   "latency_ms": {
+    "segment": 16228.5,
+    "embed": 304.6,
+    "match": 2.3,
+    "decide": 0.0,
+    "total": 16561.0
+   }
+  },
+  {
+   "frame": "005_airplane_squat_airplane",
+   "left_to_right": [
+    "P1",
+    "P3"
+   ],
+   "expected": [
+    "P1",
+    "P2",
+    "P3"
+   ],
+   "correct": false,
+   "sims": {
+    "P1": 0.6648,
+    "P2": 0.3029,
+    "P3": 0.6528
+   },
+   "latency_ms": {
+    "segment": 16342.9,
+    "embed": 313.9,
+    "match": 1.5,
+    "decide": 0.0,
+    "total": 16686.7
+   }
+  },
+  {
+   "frame": "006_centre-player-left-frame",
+   "left_to_right": [
+    "P1",
+    "P3"
+   ],
+   "expected": [
+    "P1",
+    "P3"
+   ],
+   "correct": true,
+   "sims": {
+    "P1": 0.9361,
+    "P2": 0.322,
+    "P3": 0.9192
+   },
+   "latency_ms": {
+    "segment": 16306.1,
+    "embed": 208.6,
+    "match": 1.8,
+    "decide": 0.0,
+    "total": 16534.9
+   }
+  }
+ ],
+ "reid_all_correct": false,
+ "note": "004 ground truth corrected after the run (the script first had P2,P3,P1 from a misread frame); outputs unchanged."
+}

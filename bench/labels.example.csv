@@ -1,0 +1,5 @@
+id,image,image_before,player,command,question,label
+r03_p1_onefoot,crops/r03_p1_0.jpg,,P1,one_foot,,1
+r03_p2_onefoot,crops/r03_p2_0.jpg,,P2,one_foot,,0
+r05_p1_freeze,crops/r05_p1_after.jpg,crops/r05_p1_before.jpg,P1,freeze,,1
+r05_p2_freeze,crops/r05_p2_after.jpg,crops/r05_p2_before.jpg,P2,freeze,,0

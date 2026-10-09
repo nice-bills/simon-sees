@@ -1,0 +1,24 @@
+id,image,image_before,player,command,question,label,source_url
+tree1_onefoot,tree1_384.jpg,,white top,one_foot,,1,https://www.drweil.com/wp-content/uploads/2016/12/health-wellness_balanced-living_exercise-fitness_tree-pose_2716x1810_000048057186.jpg
+tree1_handshead,tree1_384.jpg,,white top,hands_head,,0,
+tree1_sit,tree1_384.jpg,,white top,sit_down,,0,
+onefoot2_onefoot,onefoot2_384.jpg,,black outfit,one_foot,,1,https://thetaichinotebook.com/wp-content/uploads/2024/07/monica-leonardi-bp8rssvti-o-unsplash.jpg
+onefoot2_handshead,onefoot2_384.jpg,,black outfit,hands_head,,0,
+onefoot2_sit,onefoot2_384.jpg,,black outfit,sit_down,,0,
+head1_handshead,head1_384.jpg,,white t-shirt,hands_head,,1,https://st2.depositphotos.com/1715570/5715/i/950/depositphotos_57151519-stock-photo-full-length-portrait-of-a.jpg
+head1_onefoot,head1_384.jpg,,white t-shirt,one_foot,,0,
+head1_sit,head1_384.jpg,,white t-shirt,sit_down,,0,
+head2_handshead,head2_384.jpg,,white t-shirt,hands_head,,1,https://thumbs.dreamstime.com/b/full-body-shot-handsome-asian-man-hands-behind-head-park-outdoors-portrait-handsome-filipino-man-park-191177279.jpg
+head2_onefoot,head2_384.jpg,,white t-shirt,one_foot,,0,
+head2_airplane,head2_384.jpg,,white t-shirt,airplane,,0,
+sit1_sit,sit1_384.jpg,,checked shirt,sit_down,,1,https://static.vecteezy.com/system/resources/previews/003/307/034/large_2x/young-thoughtful-man-sitting-on-the-grass-in-the-park-photo.jpg
+sit1_onefoot,sit1_384.jpg,,checked shirt,one_foot,,0,
+sit1_handshead,sit1_384.jpg,,checked shirt,hands_head,,0,
+tree3_onefoot,tree3_384.jpg,,light green outfit,one_foot,,1,https://cdn.yogajournal.com/wp-content/uploads/2022/01/Tree-Pose_Alt-1_2400x1350_Andrew-Clark.jpeg
+tree3_sit,tree3_384.jpg,,light green outfit,sit_down,,0,
+tree3_armsup,tree3_384.jpg,,light green outfit,arms_up,,0,
+tree1_visible_red,tree1_384.jpg,,,,Is there a person wearing a red shirt in this photo?,0,
+cats_visible_person,cats_384.jpg,,,,Is there a person in this photo?,0,http://images.cocodataset.org/val2017/000000039769.jpg
+head2_visible_white,head2_384.jpg,,,,Is there a person wearing a white t-shirt in this photo?,1,
+freeze_same_tree1,tree1_384.jpg,tree1_384.jpg,white top,freeze,,0,
+freeze_same_head1,head1_384.jpg,head1_384.jpg,white t-shirt,freeze,,0,

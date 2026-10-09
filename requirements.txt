@@ -1,0 +1,7 @@
+# Core server + game (no model): enough for tests and `--decider mock` dry runs
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+pillow>=10
+numpy>=1.26
+huggingface_hub>=0.30  # `python -m simon_sees upload`: playtest sessions -> your private HF dataset

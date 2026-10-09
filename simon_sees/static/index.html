@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Simon Sees</title>
+  <link rel="preload" href="/static/fonts/BarlowCondensed-Medium.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/Inter-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-mood="lobby">
+  <!-- Design: "the camera is the interface". Full-bleed camera (or, in a replay, the recorded frame the referee
+       judged), a thin HUD floating on top: letter-spaced caps labels, one huge condensed numeral, a single lime
+       accent, scrims instead of panels. Each player gets a ring drawn from their SAM box; the ring's colour is
+       the verdict (lime safe, red out, amber "Simon didn't say", dashed = lost you).
+       See docs/design/DIRECTION.md. -->
+
+  <!-- the scene: camera / judged frame, the players' rings, scrims for legibility -->
+  <div id="scene" class="scene" aria-hidden="true">
+    <img id="backdrop" class="backdrop" alt="">
+    <div id="framer" class="framer">
+      <video id="preview" playsinline muted autoplay></video>
+      <img id="still" class="still" alt="" hidden>
+    </div>
+    <i class="scrim top"></i><i class="scrim bottom"></i>
+    <svg id="rings" class="rings" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+      </defs>
+      <g id="ring-layer"></g>
+    </svg>
+  </div>
+  <ol id="tags" class="tags lobby-tags" aria-hidden="true"></ol>
+
+  <!-- top right, both screens: the honest mode pill -->
+  <p id="replay-banner" class="pill mode" hidden data-testid="replay-banner" title="Replay demo: recorded frames, not a live camera"><i class="dot"></i><span>Replay</span><span class="sr"> demo: recorded frames, not a live camera</span></p>
+  <p id="live-pill" class="pill mode" hidden><i class="dot"></i><span>Live</span></p>
+
+  <main id="lobby" class="screen lobby">
+    <header class="hud-top">
+      <p class="label">Simon Says <span class="sep">/</span> Line-up</p>
+      <p class="numeral-row"><b id="found-count" class="numeral">00</b><span id="found-flash" class="flash" aria-hidden="true"></span></p>
+      <p class="label sub">Players found</p>
+    </header>
+    <div class="corner">
+      <button id="lobby-notes-toggle" class="round" aria-label="Ref's notes" aria-expanded="false" aria-controls="lobby-notes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8h12M6 12h12M6 16h8"/></svg></button>
+      <button id="cam-flip" class="round" disabled aria-label="Flip camera" title="Flip camera"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4"/></svg></button>
+    </div>
+
+    <div class="cam-ui">
+      <p id="cam-hint" class="cam-hint">Camera is off</p>
+      <button id="cam-on" class="btn pill-btn">Turn camera on</button>
+    </div>
+
+    <section class="hud-bottom">
+      <div class="panel-head">
+        <div><p class="label">Team sheet</p><p class="label-dim">Tap a name to change it</p></div>
+        <div class="right"><p id="lineup-status" class="status-word" role="status" data-testid="lineup-status"></p><p class="label-dim">Left to right</p></div>
+      </div>
+      <ol id="player-list" class="roster" data-testid="player-list"></ol>
+      <p id="status" class="status-line" role="status" data-testid="status">Connecting…</p>
+      <div class="kickoff">
+        <button id="lineup" class="btn ghost" data-testid="lineup" disabled>Line up</button>
+        <button id="start" class="btn primary" disabled>Start</button>
+      </div>
+    </section>
+
+    <div id="lobby-notes" class="sheet" hidden data-testid="lobby-notes" role="region" aria-label="Ref's notes"></div>
+  </main>
+
+  <main id="play" class="screen play" hidden data-mood="info">
+    <header class="hud-top">
+      <p id="meta" class="label" data-testid="meta"></p>
+      <p class="numeral-row"><b id="alive-count" class="numeral">00</b><span id="alive-flash" class="flash" aria-hidden="true"></span></p>
+      <p class="label sub">Players in</p>
+    </header>
+    <div class="corner">
+      <button id="notes-toggle" class="round" aria-label="Ref's notes" aria-expanded="false" aria-controls="ref-notes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8h12M6 12h12M6 16h8"/></svg></button>
+      <button id="stop" class="round" aria-label="Stop"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+    </div>
+
+    <!-- the players, one ring + chip each, positioned over the frame (app.js drawRings) -->
+    <ol id="board" class="tags board" data-testid="board" aria-label="Players"></ol>
+
+    <section id="stage" class="stage">
+      <p id="subs" class="subs" hidden aria-hidden="true"></p>
+      <div class="kick-row">
+        <p id="kicker" class="kicker" aria-hidden="true"></p>
+        <!-- playtest feedback: the players overrule the referee; each correction is labelled data (recorder.py) -->
+        <button id="wrong" class="btn chip-btn" type="button" hidden data-testid="wrong-call-verdict">Wrong call</button>
+      </div>
+      <div id="call" class="call" data-testid="call" aria-live="assertive">Get ready</div>
+      <p id="result" class="sr" data-testid="result" hidden></p>
+    </section>
+
+    <section class="hud-bottom">
+      <div class="panel-head">
+        <div><p class="label">Referee</p><p class="label-dim">Confidence</p></div>
+        <div class="right"><p id="phase" class="status-word" data-testid="phase" role="status"></p><p id="focus-name" class="label-dim"></p></div>
+      </div>
+      <svg id="spark" class="spark" viewBox="0 0 342 56" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <form id="endnote" class="endnote" hidden data-testid="endnote">
+        <label for="note-text" class="label">Anything Simon got wrong?</label>
+        <div class="endnote-row">
+          <textarea id="note-text" rows="1" maxlength="2000" placeholder="Optional, one sentence is plenty"></textarea>
+          <button id="note-send" class="btn chip-btn" type="submit">Send note</button>
+        </div>
+        <span id="note-status" class="label-dim" role="status" data-testid="note-status"></span>
+      </form>
+      <div class="stats">
+        <div><p class="label">Round</p><p class="stat"><b id="stat-round">–</b></p></div>
+        <div class="mid"><p class="label">Call time</p><p class="stat"><b id="stat-call">–</b></p></div>
+        <div class="right"><p class="label">Time</p><p class="stat"><b id="stat-time">00:00</b></p></div>
+      </div>
+    </section>
+
+    <div id="ref-notes" class="sheet" hidden data-testid="ref-notes" role="region" aria-label="Ref's notes">
+      <div class="notes-top"><p id="play-stack" class="notes-line"></p><button id="dim" class="btn chip-btn">Dim screen</button></div>
+      <div id="calls" class="calls" data-testid="calls" hidden></div>
+      <div id="captions" class="captions" data-testid="captions" hidden></div>
+    </div>
+  </main>
+
+  <div id="shade" hidden>Tap to wake</div>
+  <canvas id="grab" hidden></canvas>
+  <script src="/static/app.js" type="module"></script>
+</body>
+</html>

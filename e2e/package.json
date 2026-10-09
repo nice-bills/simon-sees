@@ -1,0 +1,16 @@
+{
+  "name": "simon-sees-e2e",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end tests for the Simon Sees phone client, with e2e by TesterArmy (web engine, Playwright).",
+  "scripts": {
+    "test": "e2e run",
+    "test:phone": "e2e run --target phone",
+    "demo": "e2e run --config e2e.demo.config.ts"
+  },
+  "devDependencies": {
+    "@e2e-dev/web": "^0.13.0",
+    "ai": "^7.0.133",
+    "e2e": "^0.18.0"
+  }
+}
