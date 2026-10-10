@@ -9,6 +9,8 @@ const QUALITY = 0.72;   // JPEG quality
 const state = { lineup: [], names: {}, skip: new Set(), lining: false, ws: null, stream: null, facing: "environment", sending: false, info: {}, playing: false,
   view: null, board: [], hist: {}, gameId: null, t0: null, tEnd: null, alivePrev: null, mood: "info", s: null, lineupView: null };
 const params = new URLSearchParams(location.search);
+const TOKEN = params.get("token") || "";   // the game token from the URL the server printed (?token=...)
+const authQ = (url) => url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(TOKEN);
 const CAPTIONS = params.has("captions");  // ?captions=1: subtitles of what Simon says + the referee's decisions in Ref's notes
 const MUTE = params.has("mute");          // ?mute=1: no phone speech (the demo recorder adds Simon's voice afterwards)
 window.__says = [];                        // every spoken line with its time, for tests and demo audio
@@ -17,7 +19,7 @@ const pad2 = (n) => String(Math.max(0, n | 0)).padStart(2, "0");
 // ---------------------------------------------------------------- websocket
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  const ws = new WebSocket(`${proto}://${location.host}${authQ("/ws")}`);
   ws.binaryType = "arraybuffer";
   state.ws = ws;
   ws.onopen = () => { state.statusMsg = null; guide(); };
@@ -90,7 +92,7 @@ function setView(v) {
       $("framer").classList.remove("empty");
       layoutScene();
     };
-    img.src = v.url;
+    img.src = authQ(v.url);
   } else layoutScene();
 }
 function mediaSize() {
@@ -418,7 +420,7 @@ state.flags = {};  // "round_id:pid" -> the verdict the players say was right
 const flagKey = (rid, pid) => `${rid}:${pid}`;
 async function postFeedback(body) {
   try {
-    const r = await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch(authQ("/api/feedback"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     return r.ok;
   } catch (_) { return false; }
 }
@@ -448,7 +450,7 @@ function renderCalls() {
     const k = flagKey(r.round_id, d.pid);
     const flagged = k in state.flags;
     const verdict = d.seen === false ? "not seen" : d.out ? "out" : "safe";
-    const img = photos[d.pid] ? `<img class="thumb" src="${esc(photos[d.pid])}" alt="">` : `<span class="thumb"></span>`;
+    const img = photos[d.pid] ? `<img class="thumb" src="${esc(authQ(photos[d.pid]))}" alt="">` : `<span class="thumb"></span>`;
     li.innerHTML = `${img}<b class="no">${d.number ?? ""}</b><span class="who">${esc(d.player)}</span>` +
       `<span class="given${d.out ? " is-out" : ""}">${flagged ? `${esc(verdict)} → ${esc(state.flags[k])}` : esc(verdict)}</span>`;
     if (d.seen !== false) {
@@ -600,7 +602,7 @@ function next() {
   if (!msg) { talking = false; return; }
   talking = true;
   if (msg.audio) {
-    const a = new Audio(msg.audio);
+    const a = new Audio(authQ(msg.audio));
     a.onended = a.onerror = next;
     a.play().catch(() => browserSay(msg.text, next));
   } else browserSay(msg.text, next, msg.seconds);
@@ -691,7 +693,7 @@ function renderPlayers() {
     li.dataset.testid = "lineup-player";
     const img = document.createElement("img");
     img.className = "photo"; img.alt = `Player ${p.number}`; img.decoding = "async";
-    if (p.photo) img.src = p.photo;
+    if (p.photo) img.src = authQ(p.photo);
     const no = document.createElement("b");
     no.className = "no"; no.textContent = p.number; no.setAttribute("aria-hidden", "true");
     const input = document.createElement("input");
@@ -732,7 +734,7 @@ async function recordName(btn, input, p) {  // optional open STT on the server (
       const fd = new FormData();
       fd.append("audio", new Blob(chunks, { type: rec.mimeType || "audio/webm" }), "say.webm");
       try {
-        const r = await fetch("/api/stt", { method: "POST", body: fd });
+        const r = await fetch(authQ("/api/stt"), { method: "POST", body: fd });
         const j = await r.json();
         if (j.name) { input.value = j.name; state.names[p.id] = j.name; setStatus(`Heard: “${j.text}”`); drawRings(); }
       } catch (e) { setStatus("Couldn't hear that. Type it instead."); }

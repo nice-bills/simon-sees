@@ -113,9 +113,14 @@ def pick_dtype(model_id: str, device: str, pref: str = "auto"):
 
 class D1Decider:
     """LiquidAI d1 through `transformers` with `trust_remote_code=True` (needs transformers>=5.14,
-    d1-omni-600M needs >=5.15)."""
+    d1-omni-600M needs >=5.15). Loading runs the model repo's own code, so the pinned revisions
+    (D1_REVISIONS) are loaded exactly, never whatever is latest on the Hub."""
 
     multi_image = True
+
+    # model repo commit each release was tested against (trust_remote_code runs repo code: pin it)
+    D1_REVISIONS = {"LiquidAI/d1-3B": "051bcc464b01b9f92942b364d9586b0ef5912432",
+                    "LiquidAI/d1-omni-600M": "02b55d7076f15129e59ab3f94783f32c4b088674"}
 
     def __init__(self, model_id: str = "LiquidAI/d1-3B", device: str = "auto", dtype: str = "auto",
                  compile: bool = False, tracer: Callable | None = None):
@@ -126,8 +131,12 @@ class D1Decider:
         self.name = model_id
         self.device = pick_device(device)
         self.dtype = pick_dtype(model_id, self.device, dtype)
+        revision = self.D1_REVISIONS.get(model_id)
+        if revision is None:
+            raise ValueError(f"no trusted revision is configured for {model_id!r}; add and review its commit in D1_REVISIONS")
         t0 = time.perf_counter()
-        self.model = AutoModel.from_pretrained(model_id, trust_remote_code=True, dtype=self.dtype).to(self.device)
+        self.model = AutoModel.from_pretrained(model_id, trust_remote_code=True, revision=revision,
+                                               dtype=self.dtype).to(self.device)
         self.model.eval()
         if compile and self.device == "cuda" and hasattr(self.model, "compile"):
             # the d1-3B card: CUDA graphs for single questions on NVIDIA

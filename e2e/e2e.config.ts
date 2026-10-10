@@ -20,6 +20,8 @@ const app = {
     args: [
       '-m', 'simon_sees', 'serve',
       '--host', '127.0.0.1', '--port', '{port}',
+      // localhost-only dry run with mocked models: no game token (the runner opens fixed paths)
+      '--no-auth',
       '--decider', 'mock', '--segmenter', 'mock', '--embedder', 'mock', '--seed', '3', '--rounds', '8',
       '--replay', path.join(repo, 'samples', 'people'),
       '--tts', 'browser', '--no-stt', '--fast', '--speech-scale', '0.15',

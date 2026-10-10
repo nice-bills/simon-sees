@@ -28,6 +28,10 @@ docker run -d --gpus all -p 8000:8000 \
 docker logs -f simon      # first start downloads ~6 GB of weights, then "warming up"
 ```
 
+The server generates a random game token and prints the complete phone URL in its logs. Open that URL
+through the tunnel and keep it private; it grants access to the live camera view and game controls.
+Set `SIMON_TOKEN` or pass `--token` to use a managed token. Do not use `--no-auth` on a public endpoint.
+
 `--compile` turns on CUDA graphs for single questions, as the d1-3B model card recommends for NVIDIA.
 
 ## 3. HTTPS for the phone camera

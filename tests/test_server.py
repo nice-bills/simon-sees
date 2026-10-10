@@ -60,6 +60,33 @@ def test_index_and_info(tmp_path):
         assert info["backend"] == "local" and info["tts"] == "browser"
 
 
+def test_game_token_guards_page_api_assets_and_websocket(tmp_path):
+    app = create_app(fast_cfg(tmp_path, token="secret-token"), vision=band_vision())
+    with TestClient(app) as c:
+        assert c.get("/").status_code == 401
+        assert c.get("/api/info").status_code == 401
+        assert c.get("/api/photo/0.jpg?token=wrong").status_code == 401
+        assert c.get("/static/app.js").status_code == 200
+        assert c.get("/?token=secret-token").status_code == 200
+        assert c.get("/api/info", headers={"X-Simon-Token": "secret-token"}).status_code == 200
+        with c.websocket_connect("/ws?token=secret-token") as ws:
+            assert json.loads(ws.receive_text())["type"] == "info"
+        try:
+            with c.websocket_connect("/ws") as ws:
+                ws.receive_text()
+        except Exception:
+            pass  # Starlette surfaces the server's 4401 close as a failed handshake.
+        else:
+            raise AssertionError("websocket without token was accepted")
+
+
+def test_upload_size_limit_returns_413(tmp_path):
+    app = create_app(fast_cfg(tmp_path, max_upload_mb=0.001), vision=band_vision())
+    with TestClient(app) as c:
+        response = c.post("/api/frame", files={"file": ("frame.jpg", b"x" * 2048, "image/jpeg")})
+        assert response.status_code == 413
+
+
 def test_start_without_lineup_is_refused(tmp_path):
     app = create_app(fast_cfg(tmp_path), vision=band_vision())
     with TestClient(app) as c, c.websocket_connect("/ws") as ws:

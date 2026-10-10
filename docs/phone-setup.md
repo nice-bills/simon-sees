@@ -13,7 +13,9 @@ python -m simon_sees serve            # listens on :8000
 cloudflared tunnel --url http://localhost:8000
 ```
 
-`cloudflared` prints a `https://<random-words>.trycloudflare.com` URL. Open it on the phone.
+`cloudflared` prints a `https://<random-words>.trycloudflare.com` URL. Add `?token=...` using the token
+printed by the server, then open that full URL on the phone. The token grants access to the live camera
+view, player photos, game controls, and audio; keep the full URL private.
 
 Privacy note: frames then travel phone -> Cloudflare's edge -> your laptop (TLS on both legs). Nothing is
 stored or sent to any AI service, but if you want the frames to never leave your own network, use option C.
@@ -37,6 +39,10 @@ mkcert -install
 mkcert 192.168.1.23 simon.local localhost         # use your laptop's IP
 python -m simon_sees serve --ssl-certfile 192.168.1.23+2.pem --ssl-keyfile 192.168.1.23+2-key.pem
 ```
+
+The server prints a phone URL containing a random game token. Open that exact URL; the token protects the
+camera view, player photos, controls, and audio. Keep it private and restart the command to rotate it.
+For a deliberate private-network demo, `--no-auth` disables this check.
 
 Install mkcert's root CA on the phone once (`mkcert -CAROOT` shows where it is; AirDrop/email
 `rootCA.pem` to the phone. On iOS: Settings → General → VPN & Device Management → install, then

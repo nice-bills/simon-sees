@@ -44,8 +44,9 @@ image = (
     .pip_install(
         "transformers==5.17.0", "accelerate>=1.0", "safetensors>=0.6", "huggingface_hub>=1.0", "hf_xet",
         "pillow>=10", "numpy>=1.26", "scipy", "fastapi>=0.110", "opencv-python-headless",
-        # SAM 3.1 has no transformers integration; it ships in Meta's repo (build_sam3_predictor)
-        "git+https://github.com/facebookresearch/sam3",
+        # SAM 3.1 has no transformers integration; it ships in Meta's repo (build_sam3_predictor),
+        # pinned to the tested commit (the image is rebuilt on deploy: never track main blindly)
+        "git+https://github.com/facebookresearch/sam3@0570b3a5be9c4e694f23d85232fb55f4a6f1f7fc",
     )
     .env({"HF_HOME": CACHE, "HF_HUB_ENABLE_HF_TRANSFER": "0", "SIMON_SEGMENTER": SEGMENTER, "EMBEDDER": EMBEDDER,
           "SIMON_MODEL": MODEL_ID})

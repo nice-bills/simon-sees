@@ -26,14 +26,15 @@ import io
 import json
 import logging
 import os
+import secrets
 import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fastapi import Body, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response
+from fastapi import Body, FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 import numpy as np
 from PIL import Image
@@ -49,6 +50,27 @@ from .voice import Ears, Voice, estimate_speech_s, parse_name, wav_duration
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
+# a 30 MP image decodes to ~90 MB of RGB: real phone frames never come close, decompression bombs do.
+# Pillow only *warns* at its own default (~89 MP), so it is tightened here.
+Image.MAX_IMAGE_PIXELS = 30_000_000
+
+
+class RateLimiter:
+    """Per-client token bucket for the unauthenticated-ish frame/audio drop-off points (DoS bound)."""
+
+    def __init__(self, rate_per_s: float, burst: float):
+        self.rate, self.burst = rate_per_s, burst
+        self._buckets: dict[str, tuple[float, float]] = {}
+
+    def allow(self, key: str) -> bool:
+        now = time.monotonic()
+        tokens, seen = self._buckets.get(key, (self.burst, now))
+        tokens = min(self.burst, tokens + (now - seen) * self.rate)
+        if tokens < 1.0:
+            self._buckets[key] = (tokens, now)
+            return False
+        self._buckets[key] = (tokens - 1.0, now)
+        return True
 
 
 @dataclass
@@ -79,6 +101,10 @@ class Config:
     # rings follow the players between judged looks (lobby and game): auto = on for --backend local, off for modal
     # (every follow look would be a GPU request); never in a replay (the replay is the camera, kept reproducible)
     follow: str = field(default_factory=lambda: os.environ.get("SIMON_FOLLOW", "auto"))
+    # game token: the phone page and every /api + /ws call must present it (?token=... or X-Simon-Token).
+    # "" = no auth (the library/test default); `python -m simon_sees serve` generates one unless --no-auth.
+    token: str = ""
+    max_upload_mb: float = float(os.environ.get("SIMON_MAX_UPLOAD_MB", "16"))
 
 
 def build_vision(cfg: Config, decider: Decider | None = None):
@@ -351,6 +377,45 @@ def create_app(cfg: Config, decider: Decider | None = None, vision=None) -> Fast
 
     app = FastAPI(title="Simon Sees", lifespan=lifespan)
 
+    frame_limiter = RateLimiter(rate_per_s=10, burst=20)   # the phone sends 3 fps; scripts get slack
+    stt_limiter = RateLimiter(rate_per_s=6 / 60, burst=5)  # one name registration per player, so plenty
+    max_upload = int(cfg.max_upload_mb * 1_000_000)
+    if max_upload <= 0:
+        raise ValueError("max_upload_mb must be positive")
+
+    async def read_upload(upload: UploadFile) -> bytes:
+        """Read at most the configured limit, including requests without Content-Length."""
+        data = await upload.read(max_upload + 1)
+        if len(data) > max_upload:
+            raise HTTPException(413, "payload too large")
+        return data
+
+    @app.middleware("http")
+    async def gate(request: Request, call_next):
+        """The game token guards the page and every API route; oversized uploads are refused unread."""
+        path = request.url.path
+        if cfg.token and (path == "/" or path.startswith("/api/")):
+            given = request.query_params.get("token") or request.headers.get("x-simon-token") or ""
+            if not secrets.compare_digest(given, cfg.token):
+                return JSONResponse({"error": "bad or missing token"}, status_code=401)
+        # Enforce the cap while consuming the ASGI stream, so chunked requests cannot evade it.
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > max_upload:
+                return JSONResponse({"error": "payload too large"}, status_code=413)
+            body.extend(chunk)
+        sent = False
+
+        async def replay_body():
+            nonlocal sent
+            if sent:
+                return {"type": "http.disconnect"}
+            sent = True
+            return {"type": "http.request", "body": bytes(body), "more_body": False}
+
+        request._receive = replay_body
+        return await call_next(request)
+
     def info() -> dict:
         v = st["vision"]
         models = dict(getattr(v, "models", {}) or {}) if v is not None and not st["loading"] else {}
@@ -407,16 +472,27 @@ def create_app(cfg: Config, decider: Decider | None = None, vision=None) -> Fast
         raise HTTPException(404)
 
     @app.post("/api/stt")
-    async def api_stt(audio: UploadFile = File(...)) -> dict:
+    async def api_stt(request: Request, audio: UploadFile = File(...)) -> dict:
         if not ears.available:
             raise HTTPException(501, "speech recognition not installed; type your name")
-        text = await asyncio.to_thread(ears.transcribe, await audio.read())
+        if not stt_limiter.allow(request.client.host if request.client else "?"):
+            raise HTTPException(429, "too many transcriptions, try again in a moment")
+        payload = await read_upload(audio)
+        text = await asyncio.to_thread(ears.transcribe, payload)
         return {"text": text, "name": parse_name(text)}
 
     @app.post("/api/frame")
-    async def api_frame(file: UploadFile = File(...)) -> dict:
+    async def api_frame(request: Request, file: UploadFile = File(...)) -> dict:
         """HTTP alternative to the WebSocket for sending a frame (handy for scripts)."""
-        await frames.put(fit(Image.open(io.BytesIO(await file.read())), cfg.side))
+        if not frame_limiter.allow(request.client.host if request.client else "?"):
+            raise HTTPException(429, "too many frames, slow down")
+        try:
+            img = fit(Image.open(io.BytesIO(await read_upload(file))), cfg.side)
+        except HTTPException:
+            raise
+        except Exception as e:  # noqa: BLE001 - a torn or oversized (bomb) image
+            raise HTTPException(422, f"not a usable image: {type(e).__name__}") from e
+        await frames.put(img)
         return {"ok": True, "frames": frames.count}
 
     def find_round(round_id: str) -> dict | None:
@@ -554,6 +630,9 @@ def create_app(cfg: Config, decider: Decider | None = None, vision=None) -> Fast
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
+        if cfg.token and not secrets.compare_digest(ws.query_params.get("token") or "", cfg.token):
+            await ws.close(code=4401)
+            return
         await ws.accept()
         hub.sockets.add(ws)
         await ws.send_text(json.dumps({"type": "info", **info()}))
@@ -567,6 +646,9 @@ def create_app(cfg: Config, decider: Decider | None = None, vision=None) -> Fast
                 if msg.get("bytes"):
                     if cfg.replay:
                         continue  # dry run: the replay is the camera
+                    host = ws.client.host if ws.client else "?"
+                    if len(msg["bytes"]) > max_upload or not frame_limiter.allow(host):
+                        continue
                     try:
                         img = fit(Image.open(io.BytesIO(msg["bytes"])), cfg.side)
                     except Exception:  # noqa: BLE001 - a torn frame

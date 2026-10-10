@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import logging
 import os
+import secrets
 import sys
 import time
 
@@ -83,10 +84,17 @@ def serve(a: argparse.Namespace) -> int:
 
     from .server import Config, create_app
 
-    cfg = _config(a, tts=a.tts, stt=not a.no_stt, speech_scale=a.speech_scale)
+    token = "" if a.no_auth else (a.token or secrets.token_urlsafe(12))
+    cfg = _config(a, tts=a.tts, stt=not a.no_stt, speech_scale=a.speech_scale, token=token)
     app = create_app(cfg)
     scheme = "https" if a.ssl_certfile else "http"
-    print(f"\n  Simon Sees on {scheme}://{a.host}:{a.port}  (phone: expose it with cloudflared, see docs/phone-setup.md)\n")
+    qs = f"?token={token}" if token else ""
+    print(f"\n  Simon Sees on {scheme}://{a.host}:{a.port}{qs}")
+    if token:
+        print(f"  open the printed URL (it carries the game token); --no-auth turns the check off")
+    else:
+        print("  NO game token: anyone with the URL can watch the players and run the game (--token to set one)")
+    print("  (phone: expose it with cloudflared, see docs/phone-setup.md)\n")
     uvicorn.run(app, host=a.host, port=a.port, ssl_certfile=a.ssl_certfile, ssl_keyfile=a.ssl_keyfile,
                 log_level="info", ws_max_size=4 << 20)
     return 0
@@ -214,6 +222,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="multiply the pause after each spoken line (e.g. 0.1 in tests)")
     s.add_argument("--ssl-certfile")
     s.add_argument("--ssl-keyfile")
+    s.add_argument("--token", default=os.environ.get("SIMON_TOKEN"),
+                   help="game token for the phone page and the API (auto-generated when omitted; SIMON_TOKEN)")
+    s.add_argument("--no-auth", action="store_true", help="serve without the game token (private networks only)")
     s.set_defaults(fn=serve)
     d = sub.add_parser("dryrun", help="play a game in the terminal against replayed frames")
     _common(d)
