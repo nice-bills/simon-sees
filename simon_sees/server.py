@@ -390,31 +390,45 @@ def create_app(cfg: Config, decider: Decider | None = None, vision=None) -> Fast
             raise HTTPException(413, "payload too large")
         return data
 
-    @app.middleware("http")
-    async def gate(request: Request, call_next):
-        """The game token guards the page and every API route; oversized uploads are refused unread."""
-        path = request.url.path
-        if cfg.token and (path == "/" or path.startswith("/api/")):
-            given = request.query_params.get("token") or request.headers.get("x-simon-token") or ""
-            if not secrets.compare_digest(given, cfg.token):
-                return JSONResponse({"error": "bad or missing token"}, status_code=401)
-        # Enforce the cap while consuming the ASGI stream, so chunked requests cannot evade it.
-        body = bytearray()
-        async for chunk in request.stream():
-            if len(body) + len(chunk) > max_upload:
-                return JSONResponse({"error": "payload too large"}, status_code=413)
-            body.extend(chunk)
-        sent = False
+    class Gate:
+        """Pure ASGI: the game token guards the page and every API route; uploads over the cap are refused
+        while the body streams in (chunked requests included), and the body reaches the route untouched."""
 
-        async def replay_body():
-            nonlocal sent
-            if sent:
-                return {"type": "http.disconnect"}
-            sent = True
-            return {"type": "http.request", "body": bytes(body), "more_body": False}
+        def __init__(self, inner):
+            self.inner = inner
 
-        request._receive = replay_body
-        return await call_next(request)
+        async def __call__(self, scope, receive, send):
+            if scope["type"] != "http":
+                return await self.inner(scope, receive, send)
+            path = scope.get("path", "")
+            if cfg.token and (path == "/" or path.startswith("/api/")):
+                from urllib.parse import parse_qs
+                q = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+                hdr = dict(scope.get("headers") or []).get(b"x-simon-token", b"").decode("latin-1")
+                given = (q.get("token") or [""])[0] or hdr
+                if not secrets.compare_digest(given, cfg.token):
+                    return await JSONResponse({"error": "bad or missing token"}, status_code=401)(scope, receive, send)
+            body, more = bytearray(), True
+            while more:
+                msg = await receive()
+                if msg["type"] == "http.disconnect":
+                    return
+                body.extend(msg.get("body", b""))
+                more = msg.get("more_body", False)
+                if len(body) > max_upload:
+                    return await JSONResponse({"error": "payload too large"}, status_code=413)(scope, receive, send)
+            sent = False
+
+            async def replay():
+                nonlocal sent
+                if sent:
+                    return await receive()  # waits for the client's disconnect, as Starlette expects
+                sent = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+
+            return await self.inner(scope, replay, send)
+
+    app.add_middleware(Gate)
 
     def info() -> dict:
         v = st["vision"]

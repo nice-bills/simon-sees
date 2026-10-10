@@ -40,6 +40,8 @@ if [ -z "${HF_TOKEN:-}" ]; then
 fi
 
 # 2. the server (recording is on by default; sessions/ fills up as you play)
+# the game token guards the camera view and controls; the phone link below carries it
+export SIMON_TOKEN="${SIMON_TOKEN:-$(python -c 'import secrets; print(secrets.token_urlsafe(12))')}"
 python -m simon_sees serve --port "$PORT" ${FLAGS[@]+"${FLAGS[@]}"} &
 SERVER=$!
 TUNNEL=""
@@ -68,10 +70,15 @@ if command -v cloudflared >/dev/null 2>&1; then
     [ -n "$URL" ] && break
     sleep 1
   done
-  echo; echo "  Open this on your phone:  ${URL:-(see $LOG)}"; echo
+  echo; if [ -n "$URL" ]; then
+    echo "  Open this on your phone:  $URL/?token=$SIMON_TOKEN"
+  else
+    echo "  Open the trycloudflare.com link from $LOG on your phone, adding /?token=$SIMON_TOKEN"
+  fi; echo
 else
   echo; echo "  cloudflared is not installed, so there is no https link for the phone yet."
-  echo "  Install it (docs/playtest.md, step 4) or follow docs/phone-setup.md (option C, same Wi-Fi)."; echo
+  echo "  Install it (docs/playtest.md, step 4) or follow docs/phone-setup.md (option C, same Wi-Fi)."
+  echo "  Add ?token=$SIMON_TOKEN to whatever link you open."; echo
 fi
 echo "  When you are done playing, press Ctrl+C here: the session is uploaded (or zipped) for you."
 wait "$SERVER"

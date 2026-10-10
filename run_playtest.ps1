@@ -34,6 +34,8 @@ if (-not $env:HF_TOKEN) {
   Write-Host '      $env:HF_TOKEN = "hf_..."   (docs/playtest.md, step 3)'
 }
 
+# the game token guards the camera view and controls; the phone link below carries it
+if (-not $env:SIMON_TOKEN) { $env:SIMON_TOKEN = & $Py -c "import secrets; print(secrets.token_urlsafe(12))" }
 $Server = Start-Process -FilePath $Py -ArgumentList (@("-m", "simon_sees", "serve", "--port", $Port) + $Flags) -NoNewWindow -PassThru
 $Tunnel = $null
 try {
@@ -46,7 +48,7 @@ try {
       $m = Select-String -Path $Log -Pattern 'https://[a-z0-9-]+\.trycloudflare\.com' | Select-Object -First 1
       if ($m) { $Url = $m.Matches[0].Value }
     }
-    Write-Host "`n  Open this on your phone:  $Url`n"
+    Write-Host "`n  Open this on your phone:  $Url/?token=$($env:SIMON_TOKEN)`n"
   } else {
     Write-Host "`n  cloudflared is not installed, so there is no https link for the phone yet."
     Write-Host "  Install it (docs/playtest.md, step 4) or follow docs/phone-setup.md (option C).`n"
